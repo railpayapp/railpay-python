@@ -2,6 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .client import Agent, Policy, RailPay, RailPayError, SendResult, SignedPayment
 from .constants import (
     CHAIN_ID,
     DEFAULT_BASE_URL,
@@ -17,6 +18,14 @@ from .constants import (
     tx_url,
 )
 from .encoding import b64json, from_units, to_units, unb64json
+from .x402 import (
+    AuthorizationFields,
+    PaymentPayload,
+    PaymentRequired,
+    PaymentRequirements,
+    ResourceInfo,
+    SettleResponse,
+)
 
 try:
     __version__ = version("railpay")
@@ -34,6 +43,18 @@ __all__ = [
     "USDG",
     "USDG_DECIMALS",
     "USDG_EIP712",
+    "Agent",
+    "AuthorizationFields",
+    "PaymentPayload",
+    "PaymentRequired",
+    "PaymentRequirements",
+    "Policy",
+    "RailPay",
+    "RailPayError",
+    "ResourceInfo",
+    "SendResult",
+    "SettleResponse",
+    "SignedPayment",
     "__version__",
     "address_url",
     "b64json",
