@@ -14,6 +14,7 @@ authors = [{ name = "RailPay", email = "founder@railpay.app" }]
 keywords = ["railpay", "x402", "usdg", "robinhood-chain", "eip-3009", "ai-agents", "payments", "stablecoin"]
 classifiers = [
   "Development Status :: 4 - Beta",
+  "Framework :: AsyncIO",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",

@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .agent import PaymentAuth, PaymentEvent, paid_client
-from .client import Agent, Policy, RailPay, RailPayError, SendResult, SignedPayment
+from .client import Agent, AsyncRailPay, Policy, RailPay, RailPayError, SendResult, SignedPayment
 from .constants import (
     CHAIN_ID,
     DEFAULT_BASE_URL,
@@ -49,6 +49,7 @@ __all__ = [
     "USDG_DECIMALS",
     "USDG_EIP712",
     "Agent",
+    "AsyncRailPay",
     "AuthorizationFields",
     "PaymentAuth",
     "PaymentEvent",

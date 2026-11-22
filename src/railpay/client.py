@@ -1,4 +1,4 @@
-"""Client for the RailPay API: :class:`RailPay`, on httpx."""
+"""Clients for the RailPay API: :class:`RailPay` (sync) and :class:`AsyncRailPay` (async), both on httpx."""
 
 from __future__ import annotations
 
@@ -200,3 +200,57 @@ class RailPay(_Base):
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         self.close()
+
+
+class AsyncRailPay(_Base):
+    """Async client for the RailPay API. Same methods as :class:`RailPay`, awaited."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        base_url: str = DEFAULT_BASE_URL,
+        http_client: httpx.AsyncClient | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        super().__init__(api_key, base_url)
+        self._owns_client = http_client is None
+        self._http = http_client if http_client is not None else httpx.AsyncClient(timeout=timeout)
+
+    async def request(self, method: Method, path: str, body: Any = None) -> Any:
+        """Low-level call. Raises :class:`RailPayError` on a non-2xx answer."""
+        url, headers, content = self._build(method, path, body)
+        return self._parse(await self._http.request(method, url, headers=headers, content=content))
+
+    async def me(self) -> Agent:
+        self._need_key()
+        return cast(Agent, (await self.request("GET", "/v1/agent/me"))["agent"])
+
+    async def pay(
+        self, payment_required: PaymentRequired | dict[str, Any], resource_url: str | None = None
+    ) -> SignedPayment:
+        self._need_key()
+        body = self._pay_body(payment_required, resource_url)
+        return cast(SignedPayment, await self.request("POST", "/v1/agent/pay", body))
+
+    async def send(self, to: str, amount: str | Decimal, memo: str | None = None) -> SendResult:
+        self._need_key()
+        return cast(SendResult, await self.request("POST", "/v1/agent/send", self._send_body(to, amount, memo)))
+
+    async def config(self) -> dict[str, Any]:
+        return cast(dict[str, Any], await self.request("GET", "/v1/config"))
+
+    async def stats(self) -> dict[str, Any]:
+        return cast(dict[str, Any], await self.request("GET", "/v1/stats"))
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._http.aclose()
+
+    async def __aenter__(self) -> AsyncRailPay:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.aclose()

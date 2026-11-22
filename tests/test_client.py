@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from railpay import NETWORK, USDG, RailPay, RailPayError
+from railpay import NETWORK, USDG, AsyncRailPay, RailPay, RailPayError
 
 API = "https://api.test"
 TX = "0x" + "ab" * 32
@@ -110,6 +110,7 @@ def test_request_shapes() -> None:
 def test_never_shows_the_key() -> None:
     railpay = RailPay("rp_sk_secret")
     assert "rp_sk_secret" not in repr(railpay)
+    assert "rp_sk_secret" not in repr(AsyncRailPay("rp_sk_secret"))
     railpay.close()
 
 
@@ -123,3 +124,38 @@ def test_closes_only_its_own_http_client() -> None:
         pass
     assert not shared.is_closed
     shared.close()
+
+
+@pytest.mark.anyio
+async def test_async_client_methods() -> None:
+    seen: list[tuple[str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.read()))
+        if request.url.path == "/v1/agent/me":
+            return httpx.Response(200, json={"agent": {"id": "agt_1"}})
+        if request.url.path in ("/v1/agent/pay", "/v1/agent/send", "/v1/config"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(401, json={"error": "unauthorized", "message": "Sign in"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with AsyncRailPay("k", base_url=API, http_client=http) as rp:
+        assert (await rp.me())["id"] == "agt_1"
+        assert await rp.config() == {"ok": True}
+        await rp.pay(required(), "https://seller.test/report")
+        assert json.loads(seen[-1][2]) == {"payment_required": required(), "resource": "https://seller.test/report"}
+        await rp.send("agt_2", Decimal("1.25"))
+        assert json.loads(seen[-1][2]) == {"to": "agt_2", "amount": "1.25"}
+        with pytest.raises(RailPayError) as e:
+            await rp.stats()
+        assert (e.value.status, e.value.code, e.value.message) == (401, "unauthorized", "Sign in")
+    assert not http.is_closed
+    await http.aclose()
+
+
+@pytest.mark.anyio
+async def test_async_client_needs_an_agent_key() -> None:
+    async with AsyncRailPay() as rp:
+        with pytest.raises(RailPayError) as e:
+            await rp.pay(required())
+    assert e.value.code == "missing_api_key"
