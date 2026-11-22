@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +13,7 @@ import pytest
 from railpay import (
     NETWORK,
     USDG,
+    AsyncRailPay,
     PaymentAuth,
     PaymentEvent,
     RailPay,
@@ -113,6 +113,9 @@ class Server:
 
     def paid(self) -> bool:
         return any(c.url.endswith("/v1/agent/pay") for c in self.calls)
+
+    def async_client(self, key: str | None = "rp_sk_test") -> AsyncRailPay:
+        return AsyncRailPay(key, base_url=API, http_client=httpx.AsyncClient(transport=self.transport))
 
 
 def test_pays_a_402_and_retries_once_with_payment_signature() -> None:
@@ -258,13 +261,80 @@ def test_raises_api_refusals() -> None:
     assert (e.value.status, e.value.code) == (403, "host_not_allowed")
 
 
-def test_payment_auth_needs_a_sync_client() -> None:
+# ---------- async ----------
+
+
+@pytest.mark.anyio
+async def test_async_client_pays_and_retries_once() -> None:
+    server = Server(required())
+    events: list[PaymentEvent] = []
+
+    async def on_payment(event: PaymentEvent) -> None:
+        events.append(event)
+
+    async with paid_client(server.async_client(), on_payment=on_payment, transport=server.transport) as http:
+        res = await http.get(RESOURCE)
+    assert res.status_code == 200
+    assert res.json() == {"ok": True}
+    assert server.urls() == [RESOURCE, f"{API}/v1/agent/pay", RESOURCE]
+    assert [e.amount for e in events] == [10_000]
+    receipt = read_payment_response(res)
+    assert receipt is not None
+    assert receipt["transaction"] == TX
+
+
+@pytest.mark.anyio
+async def test_async_accepts_a_plain_on_payment_callback() -> None:
+    server = Server(required())
+    events: list[PaymentEvent] = []
+    async with paid_client(server.async_client(), on_payment=events.append, transport=server.transport) as http:
+        assert (await http.get(RESOURCE)).status_code == 200
+    assert len(events) == 1
+
+
+@pytest.mark.anyio
+async def test_async_refuses_to_pay_above_max_amount() -> None:
+    server = Server(required(NETWORK, "10000"))
+    async with paid_client(server.async_client(), max_amount="0.0099", transport=server.transport) as http:
+        with pytest.raises(RailPayError) as e:
+            await http.get(RESOURCE)
+    assert e.value.code == "over_max_amount"
+    assert not server.paid()
+
+
+@pytest.mark.anyio
+async def test_async_returns_the_original_402_when_no_requirement_is_payable() -> None:
+    server = Server(required("eip155:8453"))
+    async with paid_client(server.async_client(), transport=server.transport) as http:
+        res = await http.get(RESOURCE)
+    assert res.status_code == 402
+    assert not server.paid()
+
+
+@pytest.mark.anyio
+async def test_async_resends_a_streamed_body() -> None:
     server = Server(required())
 
-    async def main() -> None:
-        async with httpx.AsyncClient(auth=PaymentAuth(server.sync_client()), transport=server.transport) as http:
-            await http.get(RESOURCE)
+    async def chunks() -> AsyncIterator[bytes]:
+        yield b"raw-"
+        yield b"bytes"
 
-    with pytest.raises(TypeError, match=r"httpx\.Client"):
-        asyncio.run(main())
-    assert server.calls == []
+    async with paid_client(server.async_client(), transport=server.transport) as http:
+        res = await http.post(RESOURCE, content=chunks(), headers={"content-type": "text/plain"})
+    assert res.status_code == 200
+    assert [c.body for c in server.calls if c.url == RESOURCE] == [b"raw-bytes", b"raw-bytes"]
+
+
+def test_payment_auth_with_an_async_railpay_refuses_a_sync_client() -> None:
+    server = Server(required())
+    http = httpx.Client(auth=PaymentAuth(server.async_client()), transport=server.transport)
+    with http, pytest.raises(TypeError, match="AsyncClient"):
+        http.get(RESOURCE)
+
+
+@pytest.mark.anyio
+async def test_payment_auth_with_a_sync_railpay_refuses_an_async_client() -> None:
+    server = Server(required())
+    async with httpx.AsyncClient(auth=PaymentAuth(server.sync_client()), transport=server.transport) as http:
+        with pytest.raises(TypeError, match="AsyncRailPay"):
+            await http.get(RESOURCE)

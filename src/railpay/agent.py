@@ -1,15 +1,16 @@
-"""Agent side: pay x402 v2 resources from a RailPay agent wallet with an httpx client."""
+"""Agent side: pay x402 v2 resources from a RailPay agent wallet with any httpx client."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+import inspect
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, overload
 
 import httpx
 
-from .client import RailPay, RailPayError, SignedPayment
+from .client import AsyncRailPay, RailPay, RailPayError, SignedPayment
 from .encoding import from_units, to_units
 from .x402 import PaymentRequired, PaymentRequirements, is_railpay_payable, read_payment_required, requirement_amount
 
@@ -25,7 +26,7 @@ class PaymentEvent:
     payment: SignedPayment
 
 
-OnPayment = Callable[[PaymentEvent], None]
+OnPayment = Callable[[PaymentEvent], "Awaitable[None] | None"]
 
 
 @dataclass(frozen=True)
@@ -56,12 +57,13 @@ class PaymentAuth(httpx.Auth):
     body included, with PAYMENT-SIGNATURE.
 
     ``max_amount``: a USDG decimal (``"0.05"`` or ``Decimal``), or base units as an ``int`` (like the TS ``bigint``).
-    Use it with ``httpx.Client``.
+    Use it with ``httpx.Client`` when ``railpay`` is a :class:`RailPay`, and with ``httpx.AsyncClient`` when it is
+    an :class:`AsyncRailPay`.
     """
 
     def __init__(
         self,
-        railpay: RailPay,
+        railpay: RailPay | AsyncRailPay,
         *,
         max_amount: str | Decimal | int | None = None,
         on_payment: OnPayment | None = None,
@@ -88,6 +90,9 @@ class PaymentAuth(httpx.Auth):
         return _Plan(url=url, payment_required=with_resource, requirement=req, amount=amount)
 
     def sync_auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
+        railpay = self.railpay
+        if not isinstance(railpay, RailPay):
+            raise TypeError("PaymentAuth with an AsyncRailPay client works with httpx.AsyncClient")
         request.read()  # a request body can be streamed once: keep a copy for the paid retry
         response = yield request
         if response.status_code != 402:
@@ -96,26 +101,66 @@ class PaymentAuth(httpx.Auth):
         plan = self._plan(request, response)
         if plan is None:
             return
-        payment = self.railpay.pay(plan.payment_required, plan.url)
+        payment = railpay.pay(plan.payment_required, plan.url)
         if self.on_payment is not None:
             self.on_payment(PaymentEvent(plan.url, plan.requirement, plan.amount, payment))
         request.headers["PAYMENT-SIGNATURE"] = payment["payment"]
         yield request
 
-    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-        # httpx.Client uses sync_auth_flow above; only httpx.AsyncClient gets here.
-        raise TypeError("PaymentAuth works with httpx.Client, not httpx.AsyncClient")
+    async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        railpay = self.railpay
+        if not isinstance(railpay, AsyncRailPay):
+            raise TypeError("PaymentAuth with a RailPay client works with httpx.Client; use AsyncRailPay here")
+        await request.aread()
+        response = yield request
+        if response.status_code != 402:
+            return
+        await response.aread()
+        plan = self._plan(request, response)
+        if plan is None:
+            return
+        payment = await railpay.pay(plan.payment_required, plan.url)
+        if self.on_payment is not None:
+            result = self.on_payment(PaymentEvent(plan.url, plan.requirement, plan.amount, payment))
+            if inspect.isawaitable(result):
+                await result
+        request.headers["PAYMENT-SIGNATURE"] = payment["payment"]
+        yield request
 
 
+@overload
 def paid_client(
     railpay: RailPay,
     *,
     max_amount: str | Decimal | int | None = None,
     on_payment: OnPayment | None = None,
     **client_options: Any,
-) -> httpx.Client:
-    """An ``httpx.Client`` that pays 402s with :class:`PaymentAuth`.
+) -> httpx.Client: ...
 
-    Other keyword arguments go to ``httpx.Client`` (``timeout``, ``headers``, ``transport``…).
+
+@overload
+def paid_client(
+    railpay: AsyncRailPay,
+    *,
+    max_amount: str | Decimal | int | None = None,
+    on_payment: OnPayment | None = None,
+    **client_options: Any,
+) -> httpx.AsyncClient: ...
+
+
+def paid_client(
+    railpay: RailPay | AsyncRailPay,
+    *,
+    max_amount: str | Decimal | int | None = None,
+    on_payment: OnPayment | None = None,
+    **client_options: Any,
+) -> httpx.Client | httpx.AsyncClient:
+    """An httpx client that pays 402s with :class:`PaymentAuth`.
+
+    ``httpx.Client`` for a :class:`RailPay`, ``httpx.AsyncClient`` for an :class:`AsyncRailPay`. Other keyword
+    arguments go to the httpx client (``timeout``, ``headers``, ``transport``…).
     """
-    return httpx.Client(auth=PaymentAuth(railpay, max_amount=max_amount, on_payment=on_payment), **client_options)
+    auth = PaymentAuth(railpay, max_amount=max_amount, on_payment=on_payment)
+    if isinstance(railpay, AsyncRailPay):
+        return httpx.AsyncClient(auth=auth, **client_options)
+    return httpx.Client(auth=auth, **client_options)
