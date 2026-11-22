@@ -1200,23 +1200,29 @@ name = "railpay"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
+    { name = "eth-account" },
+    { name = "eth-utils" },
     { name = "httpx" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "eth-account" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "httpx", specifier = ">=0.27,<1" }]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.0" },
+    { name = "eth-account", specifier = ">=0.13,<1" },
+    { name = "eth-utils", specifier = ">=5.0" },
+    { name = "httpx", specifier = ">=0.27,<1" },
+]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "eth-account", specifier = ">=0.13,<1" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.6" },

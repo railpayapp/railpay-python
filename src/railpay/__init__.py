@@ -1,4 +1,4 @@
-"""RailPay: x402 v2 agent payments on Robinhood Chain."""
+"""RailPay: x402 v2 agent payments and a USDG paywall kit on Robinhood Chain."""
 
 from importlib.metadata import PackageNotFoundError, version
 
@@ -19,6 +19,7 @@ from .constants import (
     tx_url,
 )
 from .encoding import b64json, from_units, to_units, unb64json
+from .seller import Charge, MemoryStore, PaymentStore, Paywall, PaywallResponse, StoredPayment
 from .x402 import (
     AuthorizationFields,
     PaymentPayload,
@@ -51,11 +52,16 @@ __all__ = [
     "Agent",
     "AsyncRailPay",
     "AuthorizationFields",
+    "Charge",
+    "MemoryStore",
     "PaymentAuth",
     "PaymentEvent",
     "PaymentPayload",
     "PaymentRequired",
     "PaymentRequirements",
+    "PaymentStore",
+    "Paywall",
+    "PaywallResponse",
     "Policy",
     "RailPay",
     "RailPayError",
@@ -63,6 +69,7 @@ __all__ = [
     "SendResult",
     "SettleResponse",
     "SignedPayment",
+    "StoredPayment",
     "__version__",
     "address_url",
     "b64json",

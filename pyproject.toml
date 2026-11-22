@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "railpay"
 version = "0.3.0"
-description = "Python SDK for RailPay: x402 v2 agent payments on Robinhood Chain."
+description = "Python SDK for RailPay: x402 v2 agent payments and USDG paywalls on Robinhood Chain."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -29,6 +29,9 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  "anyio>=4.0",
+  "eth-account>=0.13,<1",
+  "eth-utils>=5.0",
   "httpx>=0.27,<1",
 ]
 
@@ -41,7 +44,6 @@ Changelog = "https://github.com/railpayapp/railpay-python/blob/main/CHANGELOG.md
 
 [dependency-groups]
 dev = [
-  "eth-account>=0.13,<1",
   "mypy>=1.10",
   "pytest>=8.0",
   "ruff>=0.6",
