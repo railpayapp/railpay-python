@@ -15,6 +15,7 @@ keywords = ["railpay", "x402", "usdg", "robinhood-chain", "eip-3009", "ai-agents
 classifiers = [
   "Development Status :: 4 - Beta",
   "Framework :: AsyncIO",
+  "Framework :: FastAPI",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -35,6 +36,9 @@ dependencies = [
   "httpx>=0.27,<1",
 ]
 
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.110"]
+
 [project.urls]
 Homepage = "https://railpay.app"
 Documentation = "https://docs.railpay.app"
@@ -44,6 +48,7 @@ Changelog = "https://github.com/railpayapp/railpay-python/blob/main/CHANGELOG.md
 
 [dependency-groups]
 dev = [
+  "fastapi>=0.110",
   "mypy>=1.10",
   "pytest>=8.0",
   "ruff>=0.6",
