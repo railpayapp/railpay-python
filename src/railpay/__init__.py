@@ -2,6 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .agent import PaymentAuth, PaymentEvent, paid_client
 from .client import Agent, Policy, RailPay, RailPayError, SendResult, SignedPayment
 from .constants import (
     CHAIN_ID,
@@ -49,6 +50,8 @@ __all__ = [
     "USDG_EIP712",
     "Agent",
     "AuthorizationFields",
+    "PaymentAuth",
+    "PaymentEvent",
     "PaymentPayload",
     "PaymentRequired",
     "PaymentRequirements",
@@ -64,6 +67,7 @@ __all__ = [
     "b64json",
     "from_units",
     "is_railpay_payable",
+    "paid_client",
     "read_payment_required",
     "read_payment_response",
     "requirement_amount",
