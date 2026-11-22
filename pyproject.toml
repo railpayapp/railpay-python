@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "railpay"
+version = "0.1.0.dev0"
+description = "Python SDK for RailPay: x402 v2 agent payments on Robinhood Chain."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "RailPay", email = "founder@railpay.app" }]
+keywords = ["railpay", "x402", "usdg", "robinhood-chain", "eip-3009", "ai-agents", "payments", "stablecoin"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Office/Business :: Financial",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://railpay.app"
+Documentation = "https://docs.railpay.app"
+Repository = "https://github.com/railpayapp/railpay-python"
+Issues = "https://github.com/railpayapp/railpay-python/issues"
+Changelog = "https://github.com/railpayapp/railpay-python/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/railpay", "tests", "README.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/railpay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers"]
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "C4", "PIE", "PT", "RET"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src", "tests"]
+warn_unreachable = true
