@@ -41,6 +41,7 @@ Changelog = "https://github.com/railpayapp/railpay-python/blob/main/CHANGELOG.md
 
 [dependency-groups]
 dev = [
+  "eth-account>=0.13,<1",
   "mypy>=1.10",
   "pytest>=8.0",
   "ruff>=0.6",
