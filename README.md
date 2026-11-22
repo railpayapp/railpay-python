@@ -5,7 +5,7 @@
 Python SDK for [RailPay](https://railpay.app): stablecoin payments on Robinhood Chain.
 
 - **Pay** for x402 resources from a RailPay agent wallet: `paid_client()` gives you an httpx client that answers a `402 Payment Required` and retries.
-- **Call** the RailPay API with `RailPay`: the agent's balance and policy, signed payments, agent-to-agent transfers and network settings.
+- **Charge** for your own API in USDG: `Paywall` returns the 402, verifies the payment, settles it and serves the response.
 
 Settlement is real: USDG (Global Dollar, 6 decimals) on Robinhood Chain (chain id 4663), using x402 v2, scheme `exact`, with EIP-3009 `TransferWithAuthorization`. This is the Python counterpart of the TypeScript SDK, [railpay-sdk](https://github.com/railpayapp/railpay-sdk), and speaks the same wire format.
 
@@ -19,7 +19,7 @@ pip install git+https://github.com/railpayapp/railpay-python
 uv add git+https://github.com/railpayapp/railpay-python
 ```
 
-Python 3.10+. The one runtime dependency is [httpx](https://www.python-httpx.org). Fully typed (`py.typed`).
+Python 3.10+. Runtime dependencies: [httpx](https://www.python-httpx.org), [eth-account](https://github.com/ethereum/eth-account) (signature recovery for the paywall) and anyio. Fully typed (`py.typed`).
 
 ## Pay for an x402 resource (agent)
 
@@ -67,6 +67,66 @@ What happens:
 
 If no option is payable, the original 402 comes back unchanged. A price above `max_amount` raises `RailPayError` with code `over_max_amount` before anything is signed. Request bodies, streamed ones included, are kept and sent again on the retry. The agent key goes only to RailPay, never to the seller. `on_payment` is called with a `PaymentEvent` (url, requirement, amount in base units, signed payment) before the retry.
 
+## Charge for your API (seller)
+
+```python
+from railpay import Paywall
+
+paywall = Paywall(
+    "0xYourWallet",
+    "0.01",  # USDG per request, at least 0.001
+    description="Daily market report",
+)
+```
+
+Pass the full request URL and headers from your framework:
+
+```python
+from railpay import PaywallResponse
+
+res = await paywall.handle(url, headers, lambda: PaywallResponse.json({"report": "…"}))
+# res.status, res.headers, res.body: turn them into your framework's response
+
+# or decide yourself:
+charge = await paywall.charge(url, headers)
+if not charge.paid:
+    return make_response(charge.status, charge.headers, charge.body)  # the 402
+```
+
+`charge()` / `handle()`:
+
+1. No payment: answers `402` with the requirement (`PAYMENT-REQUIRED` header and the same JSON in the body).
+2. With `PAYMENT-SIGNATURE` (or `X-PAYMENT`): checks recipient, amount, validity window and signature, then reads the payer's USDG balance and the authorization nonce from the chain.
+3. Sends the authorization to an x402 facilitator to settle.
+4. Reads the transaction receipt and looks for the exact USDG transfer, payer → `pay_to`, for the price. A facilitator's "success" alone is not trusted.
+5. Reports the request as paid (`handle()` calls `serve()` once) and adds `PAYMENT-RESPONSE` with the transaction hash.
+
+If the transfer is broadcast but not confirmed yet, the answer is `402 settlement_pending`. Retrying with the same payment serves the resource once the transfer is on-chain. A payment unlocks one response. Replays get `invalid_payload`.
+
+The paywall is async (httpx.AsyncClient). Close it with `await paywall.aclose()` or `async with paywall:` when your app shuts down.
+
+### Gas and facilitators
+
+Settlement goes through outside x402 facilitators that pay the gas and need no key: [Toll](https://x402.t0ll.xyz) first, then [Primer](https://x402.primer.systems). They are third-party services, not run by RailPay, and they have their own limits (Toll: 0.001 to 100 USDG per payment). You can pass your own list with `facilitators=`. A RailPay relayer is coming soon.
+
+### Running on more than one instance
+
+The default `MemoryStore` remembers payments inside one process. Once a payment is settled its nonce is spent on-chain, so a replay sent to another instance is refused anyway. The gap is two instances settling the same authorization at the same moment. With several worker processes or replicas (uvicorn `--workers`, gunicorn, serverless), pass a shared `store` whose `claim()` is an atomic insert-if-absent (Redis `SET NX`, a database row with a unique key).
+
+```python
+from railpay import PaymentStore, StoredPayment
+
+
+class RedisStore:  # implements PaymentStore
+    async def claim(self, key: str, value: StoredPayment) -> bool: ...  # False if the key exists
+    async def get(self, key: str) -> StoredPayment | None: ...
+    async def set(self, key: str, value: StoredPayment) -> None: ...
+    async def delete(self, key: str) -> None: ...
+
+
+paywall = Paywall("0xYourWallet", "0.01", store=RedisStore())
+```
+
 ## API
 
 ### `RailPay(api_key=None, *, base_url="https://dapp.railpay.app", http_client=None, timeout=30.0)`
@@ -88,6 +148,15 @@ API errors raise `RailPayError` with `status`, `code` and `message`. Policy refu
 
 Returns an `httpx.Client` for a `RailPay`, an `httpx.AsyncClient` for an `AsyncRailPay`. Other keyword arguments go to httpx (`timeout`, `headers`, `transport`…). `PaymentAuth(railpay, *, max_amount=None, on_payment=None)` is the `httpx.Auth` behind it. `max_amount` is a USDG decimal (`"0.05"` or `Decimal`) or base units as an `int`.
 
+### `Paywall(pay_to, price, *, description=None, mime_type=None, facilitators=None, rpc_url=None, store=None, http_client=None, receipt_wait=12.0)`
+
+`price` is a USDG decimal (`"0.01"` or `Decimal`) or base units as an `int`, at least 0.001 USDG. `rpc_url` defaults to `https://robinhood-rpc.publicnode.com`. `receipt_wait` is how many seconds to wait for the settlement receipt before answering `settlement_pending`.
+
+- `requirements(url)`: the x402 `PaymentRequired` for a URL.
+- `await charge(url, headers)` → `Charge(paid, status, headers, body, error, message, transaction, payer)`. When `paid`, `headers` holds `PAYMENT-RESPONSE` for your response.
+- `await handle(url, headers, serve)` → `PaywallResponse(status, headers, body)`. `serve` may be sync or async.
+- `await aclose()`.
+
 ### Helpers
 
 - `to_units("1.5")` → `1500000`, `from_units(1500000)` → `"1.5"`
@@ -99,6 +168,7 @@ Returns an `httpx.Client` for a `RailPay`, an `httpx.AsyncClient` for an `AsyncR
 
 - An agent key can spend from the agent wallet within its policy. Keep it on a server, never in client-side code. Set a daily cap and allowlists in the dapp.
 - `PaymentAuth` signs only USDG on Robinhood Chain. Use `max_amount` as a second limit on top of the policy.
+- The paywall serves a request only after it has read the exact USDG transfer from the chain.
 - Report vulnerabilities to founder@railpay.app (see [SECURITY.md](SECURITY.md)).
 
 ## Development
@@ -108,7 +178,7 @@ uv sync
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 ```
 
-Tests mock HTTP. Nothing touches the network.
+Tests mock HTTP and RPC, and sign real EIP-3009 authorizations with throwaway keys made in the test.
 
 ## Links
 
