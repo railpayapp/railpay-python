@@ -40,6 +40,16 @@ receipt = read_payment_response(res)
 print(receipt and receipt["transaction"])  # settlement tx hash
 ```
 
+Async, with `AsyncRailPay`:
+
+```python
+from railpay import AsyncRailPay, paid_client
+
+async with AsyncRailPay(os.environ["RAILPAY_AGENT_KEY"]) as railpay:
+    async with paid_client(railpay, max_amount="0.05") as http:
+        res = await http.get("https://dapp.railpay.app/x402/time")
+```
+
 Already have an httpx client? `PaymentAuth` is an `httpx.Auth`, so you can pass it per request or per client:
 
 ```python
@@ -61,7 +71,7 @@ If no option is payable, the original 402 comes back unchanged. A price above `m
 
 ### `RailPay(api_key=None, *, base_url="https://dapp.railpay.app", http_client=None, timeout=30.0)`
 
-It closes its own HTTP client (`close()`, or use it as a context manager), never one you passed in.
+`AsyncRailPay` takes the same arguments (`http_client` is then an `httpx.AsyncClient`) and has the same methods, awaited. Both close their own HTTP client (`close()` / `aclose()`, or use them as context managers), never one you passed in.
 
 | Method | Auth | Returns |
 |---|---|---|
@@ -76,7 +86,7 @@ API errors raise `RailPayError` with `status`, `code` and `message`. Policy refu
 
 ### `paid_client(railpay, *, max_amount=None, on_payment=None, **httpx_options)`
 
-Returns an `httpx.Client` that pays 402s. Other keyword arguments go to httpx (`timeout`, `headers`, `transport`…). `PaymentAuth(railpay, *, max_amount=None, on_payment=None)` is the `httpx.Auth` behind it, for `httpx.Client`. `max_amount` is a USDG decimal (`"0.05"` or `Decimal`) or base units as an `int`.
+Returns an `httpx.Client` for a `RailPay`, an `httpx.AsyncClient` for an `AsyncRailPay`. Other keyword arguments go to httpx (`timeout`, `headers`, `transport`…). `PaymentAuth(railpay, *, max_amount=None, on_payment=None)` is the `httpx.Auth` behind it. `max_amount` is a USDG decimal (`"0.05"` or `Decimal`) or base units as an `int`.
 
 ### Helpers
 
