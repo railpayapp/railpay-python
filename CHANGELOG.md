@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.0] - 2026-11-22
+
+- `AsyncRailPay`: the async client, with the same methods as `RailPay`, on `httpx.AsyncClient`.
+- `PaymentAuth` and `paid_client()` work with `httpx.AsyncClient` when given an `AsyncRailPay`. `on_payment` may be a coroutine function.
+
 ## [0.2.0] - 2026-11-22
 
 - `PaymentAuth`: an `httpx.Auth` that answers an x402 v2 `402 Payment Required` from a RailPay agent wallet and retries once with `PAYMENT-SIGNATURE` (the Python form of `withPayment`). It pays only `exact` / `eip155:4663` / USDG options, and `max_amount` refuses a higher price before anything is signed. Request bodies, streamed ones included, are sent again on the retry.
