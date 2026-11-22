@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0] - 2026-11-22
+
+- `Paywall`: charge USDG for your own API. It returns the 402, checks the EIP-3009 authorization (recipient, amount, validity window, EIP-712 signature, then the payer's balance and the nonce on-chain), settles it through keyless x402 facilitators (Toll, then Primer) that pay the gas, and reports the request as paid only after the exact USDG transfer is in the receipt. A transfer that is not confirmed yet answers `settlement_pending`.
+- `charge(url, headers)` and `handle(url, headers, serve)` work with any framework.
+- `PaymentStore` protocol and `MemoryStore`: one payment unlocks one response. Pass a shared store with an atomic `claim()` when you run more than one instance.
+- Signatures are recovered the same way the TypeScript SDK (viem) makes them, checked against a cross-implementation test vector.
+- New runtime dependencies: eth-account, eth-utils and anyio.
+
 ## [0.3.0] - 2026-11-22
 
 - `AsyncRailPay`: the async client, with the same methods as `RailPay`, on `httpx.AsyncClient`.
