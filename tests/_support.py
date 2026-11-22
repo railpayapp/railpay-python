@@ -13,7 +13,7 @@ import httpx
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 
-from railpay import CHAIN_ID, NETWORK, USDG, b64json
+from railpay import CHAIN_ID, NETWORK, USDG, Paywall, b64json
 
 RPC = "https://rpc.test"
 FAC_A = "https://facilitator-a.test"
@@ -182,3 +182,22 @@ class World:
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
+
+
+def seller_paywall(world: World, pay_to: LocalAccount) -> Paywall:
+    """A 0.01 USDG paywall that settles through FAC_A on the mocked chain."""
+    return Paywall(
+        pay_to.address,
+        "0.01",
+        description="Report",
+        facilitators=[FAC_A],
+        rpc_url=RPC,
+        http_client=world.client(),
+        receipt_wait=0,
+    )
+
+
+def settle_ok(world: World, payer: str, pay_to: str) -> None:
+    """FAC_A settles as TX1, and TX1's receipt holds the exact transfer."""
+    world.facilitator[FAC_A] = {"success": True, "transaction": TX1, "network": NETWORK}
+    world.receipts[TX1] = transfer_receipt(payer, pay_to, PRICE)

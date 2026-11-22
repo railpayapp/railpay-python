@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .agent import PaymentAuth, PaymentEvent, paid_client
+from .asgi import PaywallMiddleware
 from .client import Agent, AsyncRailPay, Policy, RailPay, RailPayError, SendResult, SignedPayment
 from .constants import (
     CHAIN_ID,
@@ -61,6 +62,7 @@ __all__ = [
     "PaymentRequirements",
     "PaymentStore",
     "Paywall",
+    "PaywallMiddleware",
     "PaywallResponse",
     "Policy",
     "RailPay",
