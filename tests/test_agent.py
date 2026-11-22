@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,6 +40,28 @@ def required(network: str = NETWORK, amount: str = "10000", **extra: Any) -> dic
         "extra": {"name": "Global Dollar", "version": "1", **extra},
     }
     return {"x402Version": 2, "error": "payment_required", "resource": {"url": RESOURCE}, "accepts": [accept]}
+
+
+class Wire(httpx.BaseTransport, httpx.AsyncBaseTransport):
+    """Sends a request body the way a real transport does: it reads ``request.stream`` once.
+
+    ``httpx.MockTransport`` calls ``request.read()``, which keeps a copy on the request and would hide a body that
+    cannot be sent a second time.
+    """
+
+    def __init__(self, handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        self.handler = handler
+
+    def _forward(self, request: httpx.Request, body: bytes) -> httpx.Response:
+        return self.handler(httpx.Request(request.method, request.url, headers=request.headers, content=body))
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        assert isinstance(request.stream, httpx.SyncByteStream)
+        return self._forward(request, b"".join(request.stream))
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        assert isinstance(request.stream, httpx.AsyncByteStream)
+        return self._forward(request, b"".join([chunk async for chunk in request.stream]))
 
 
 @dataclass
@@ -79,8 +102,8 @@ class Server:
         return httpx.Response(404, text="not found")
 
     @property
-    def transport(self) -> httpx.MockTransport:
-        return httpx.MockTransport(self.handler)
+    def transport(self) -> Wire:
+        return Wire(self.handler)
 
     def sync_client(self, key: str | None = "rp_sk_test") -> RailPay:
         return RailPay(key, base_url=API, http_client=httpx.Client(transport=self.transport))
@@ -173,8 +196,8 @@ def test_returns_a_402_without_a_requirement_unchanged() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(402, text="pay me somehow")
 
-    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
-    with paid_client(railpay, transport=httpx.MockTransport(handler)) as http:
+    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=Wire(handler)))
+    with paid_client(railpay, transport=Wire(handler)) as http:
         res = http.get(RESOURCE)
     assert (res.status_code, res.text) == (402, "pay me somehow")
 
@@ -189,6 +212,19 @@ def test_resends_the_post_body_on_the_paid_retry() -> None:
     assert [json.loads(h.body) for h in hits] == [{"q": "ping"}, {"q": "ping"}]
 
 
+def test_resends_a_streamed_body_on_the_paid_retry() -> None:
+    server = Server(required())
+
+    def chunks() -> Iterator[bytes]:
+        yield b'{"q":'
+        yield b'"ping"}'
+
+    with paid_client(server.sync_client(), transport=server.transport) as http:
+        res = http.post(RESOURCE, content=chunks())
+    assert res.status_code == 200
+    assert [c.body for c in server.calls if c.url == RESOURCE] == [b'{"q":"ping"}', b'{"q":"ping"}']
+
+
 def test_passes_non_402_responses_through_untouched() -> None:
     calls: list[str] = []
 
@@ -196,8 +232,8 @@ def test_passes_non_402_responses_through_untouched() -> None:
         calls.append(str(request.url))
         return httpx.Response(200, text="hello")
 
-    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
-    with paid_client(railpay, transport=httpx.MockTransport(handler)) as http:
+    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=Wire(handler)))
+    with paid_client(railpay, transport=Wire(handler)) as http:
         assert http.get("https://free.test/").text == "hello"
     assert calls == ["https://free.test/"]
 
@@ -215,8 +251,8 @@ def test_raises_api_refusals() -> None:
             return httpx.Response(403, json={"error": "host_not_allowed", "message": "Host not in the allowlist"})
         return Server(required()).handler(request)
 
-    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
-    http = paid_client(railpay, transport=httpx.MockTransport(handler))
+    railpay = RailPay("k", base_url=API, http_client=httpx.Client(transport=Wire(handler)))
+    http = paid_client(railpay, transport=Wire(handler))
     with http, pytest.raises(RailPayError) as e:
         http.get(RESOURCE)
     assert (e.value.status, e.value.code) == (403, "host_not_allowed")
