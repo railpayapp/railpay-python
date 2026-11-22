@@ -5,7 +5,7 @@
 Python SDK for [RailPay](https://railpay.app): stablecoin payments on Robinhood Chain.
 
 - **Pay** for x402 resources from a RailPay agent wallet: `paid_client()` gives you an httpx client that answers a `402 Payment Required` and retries.
-- **Charge** for your own API in USDG: `Paywall` returns the 402, verifies the payment, settles it and serves the response.
+- **Charge** for your own API in USDG: `Paywall` returns the 402, verifies the payment, settles it and serves the response. It plugs into FastAPI, Starlette or any ASGI app.
 
 Settlement is real: USDG (Global Dollar, 6 decimals) on Robinhood Chain (chain id 4663), using x402 v2, scheme `exact`, with EIP-3009 `TransferWithAuthorization`. This is the Python counterpart of the TypeScript SDK, [railpay-sdk](https://github.com/railpayapp/railpay-sdk), and speaks the same wire format.
 
@@ -15,6 +15,8 @@ The package is not on PyPI yet. Install it from GitHub:
 
 ```sh
 pip install git+https://github.com/railpayapp/railpay-python
+# with the FastAPI integration:
+pip install "railpay[fastapi] @ git+https://github.com/railpayapp/railpay-python"
 # uv:
 uv add git+https://github.com/railpayapp/railpay-python
 ```
@@ -79,7 +81,33 @@ paywall = Paywall(
 )
 ```
 
-Pass the full request URL and headers from your framework:
+FastAPI (`pip install "railpay[fastapi] @ git+…"`):
+
+```python
+from fastapi import Depends, FastAPI
+
+from railpay import Charge
+from railpay.fastapi import PaymentRequiredError, payment_required_handler, require_payment
+
+app = FastAPI()
+app.add_exception_handler(PaymentRequiredError, payment_required_handler)
+
+
+@app.get("/report")
+async def report(payment: Charge = Depends(require_payment(paywall))):
+    return {"report": "…", "tx": payment.transaction}
+```
+
+Starlette or any other ASGI app:
+
+```python
+from railpay import PaywallMiddleware
+
+app.add_middleware(PaywallMiddleware, paywall=paywall, paths=["/report"])
+# or wrap any ASGI app: app = PaywallMiddleware(app, paywall, paths=["/report"])
+```
+
+Any other framework: pass the full request URL and headers.
 
 ```python
 from railpay import PaywallResponse
@@ -157,12 +185,22 @@ Returns an `httpx.Client` for a `RailPay`, an `httpx.AsyncClient` for an `AsyncR
 - `await handle(url, headers, serve)` → `PaywallResponse(status, headers, body)`. `serve` may be sync or async.
 - `await aclose()`.
 
+### Integrations
+
+- `PaywallMiddleware(app, paywall, paths=None)`: ASGI middleware. `paths` is a list of exact paths, a predicate on the path, or `None` for every HTTP request.
+- `railpay.fastapi.require_payment(paywall)`: a dependency that returns the `Charge` and adds `PAYMENT-RESPONSE` to the response. Register `payment_required_handler` for `PaymentRequiredError` so the 402 body is the x402 JSON itself (without it FastAPI wraps it in `{"detail": …}`; the header is right either way).
+
 ### Helpers
 
 - `to_units("1.5")` → `1500000`, `from_units(1500000)` → `"1.5"`
 - `read_payment_required(response)`, `read_payment_response(response)`, `is_railpay_payable(requirement)`, `requirement_amount(requirement)`
 - `b64json(value)`, `unb64json(string)`
 - Constants: `CHAIN_ID`, `NETWORK`, `USDG`, `USDG_DECIMALS`, `USDG_EIP712`, `DEFAULT_FACILITATORS`, `MIN_X402_AMOUNT`, `EXPLORER`, `tx_url(hash)`, `address_url(address)`
+
+## Examples
+
+- [`examples/agent.py`](examples/agent.py): pay `https://dapp.railpay.app/x402/time` (0.001 USDG) from an agent wallet.
+- [`examples/fastapi_seller.py`](examples/fastapi_seller.py): charge 0.01 USDG per request on a FastAPI route.
 
 ## Security
 
@@ -176,6 +214,7 @@ Returns an `httpx.Client` for a `RailPay`, an `httpx.AsyncClient` for an `AsyncR
 ```sh
 uv sync
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+uv run python scripts/smoke.py   # read-only check against https://dapp.railpay.app and the chain, spends nothing
 ```
 
 Tests mock HTTP and RPC, and sign real EIP-3009 authorizations with throwaway keys made in the test.
