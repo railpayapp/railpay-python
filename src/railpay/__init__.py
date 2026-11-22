@@ -25,6 +25,10 @@ from .x402 import (
     PaymentRequirements,
     ResourceInfo,
     SettleResponse,
+    is_railpay_payable,
+    read_payment_required,
+    read_payment_response,
+    requirement_amount,
 )
 
 try:
@@ -59,6 +63,10 @@ __all__ = [
     "address_url",
     "b64json",
     "from_units",
+    "is_railpay_payable",
+    "read_payment_required",
+    "read_payment_response",
+    "requirement_amount",
     "to_units",
     "tx_url",
     "unb64json",
