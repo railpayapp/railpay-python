@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-11-22
+
+- `PaywallMiddleware`: ASGI middleware that puts a `Paywall` in front of chosen paths of any ASGI app (Starlette, FastAPI…). Unpaid requests get the 402. Paid ones reach the app, with `PAYMENT-RESPONSE` added to its answer.
+- `railpay.fastapi.require_payment(paywall)`: a FastAPI dependency that returns the `Charge`, with `PaymentRequiredError` and `payment_required_handler` for an exact x402 402 body. Install it with the `[fastapi]` extra.
+- Examples: `examples/agent.py` (pays `https://dapp.railpay.app/x402/time`) and `examples/fastapi_seller.py`.
+- `scripts/smoke.py`: a read-only check against the live RailPay API and Robinhood Chain. It spends nothing.
+- README: seller integrations, examples and the full API.
+
 ## [0.4.0] - 2026-11-22
 
 - `Paywall`: charge USDG for your own API. It returns the 402, checks the EIP-3009 authorization (recipient, amount, validity window, EIP-712 signature, then the payer's balance and the nonce on-chain), settles it through keyless x402 facilitators (Toll, then Primer) that pay the gas, and reports the request as paid only after the exact USDG transfer is in the receipt. A transfer that is not confirmed yet answers `settlement_pending`.
